@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- Paleta de Azules Tecnológicos (Dark Theme) -->
+    <color name="blue_tech_primary">#1B3A5C</color>
+    <color name="blue_tech_primary_variant">#102A44</color>
+    <color name="blue_tech_secondary">#3A7CA5</color>
+    <color name="blue_tech_accent">#4A90E2</color>
+    <color name="blue_tech_background">#050B14</color>
+    <color name="blue_tech_dark_background">#050B14</color>
+    <color name="blue_tech_card">#111D2D</color>
+</resources>
