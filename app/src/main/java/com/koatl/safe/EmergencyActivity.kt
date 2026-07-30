@@ -72,23 +72,38 @@ class EmergencyActivity : AppCompatActivity() {
             vibrator.vibrate(patron, 0)
         }
 
+        var ubicacionResuelta = false
+
+        if (!tieneUbicacion) {
+            val fusedClient = com.google.android.gms.location.LocationServices
+                .getFusedLocationProviderClient(this)
+            if (androidx.core.app.ActivityCompat.checkSelfPermission(
+                    this, android.Manifest.permission.ACCESS_FINE_LOCATION
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                fusedClient.lastLocation.addOnSuccessListener { location ->
+                    if (!ubicacionResuelta) {
+                        ubicacionResuelta = true
+                        location?.let {
+                            activarEmergencia(it.latitude, it.longitude, true)
+                        }
+                    }
+                }
+            }
+        }
+
         val timer = object : CountDownTimer(10000, 1000) {
             override fun onTick(millisUntilFinished: Long) {
                 tvCuenta.text = (millisUntilFinished / 1000).toString()
             }
             override fun onFinish() {
                 vibrator.cancel()
-                activarEmergencia(lat, lng, tieneUbicacion)
+                if (!ubicacionResuelta) {
+                    ubicacionResuelta = true
+                    activarEmergencia(lat, lng, tieneUbicacion)
+                }
             }
         }
         timer.start()
-
-        findViewById<View>(R.id.btnCancelar).setOnClickListener {
-            timer.cancel()
-            vibrator.cancel()
-            cancelarNotificacion()
-            finish()
-        }
     }
 
     private fun obtenerVibrator(): Vibrator {
@@ -133,14 +148,20 @@ class EmergencyActivity : AppCompatActivity() {
 
         // Llamada automatica al contacto 1
         if (contacto1Telefono.isNotEmpty() && !esPrueba) {
-            try {
-                val callIntent = Intent(Intent.ACTION_CALL).apply {
-                    data = Uri.parse("tel:$contacto1Telefono")
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            if (androidx.core.app.ActivityCompat.checkSelfPermission(
+                    this, android.Manifest.permission.CALL_PHONE
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                try {
+                    val callIntent = Intent(Intent.ACTION_CALL).apply {
+                        data = Uri.parse("tel:$contacto1Telefono")
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    startActivity(callIntent)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error al llamar: ${e.message}")
                 }
-                startActivity(callIntent)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error al llamar: ${e.message}")
+            } else {
+                Log.w(TAG, "Permiso CALL_PHONE no otorgado")
             }
         }
 

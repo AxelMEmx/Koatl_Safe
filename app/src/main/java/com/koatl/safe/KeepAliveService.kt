@@ -142,6 +142,7 @@ class KeepAliveService : Service() {
                     enviarBroadcast(ACTION_CONNECTED)
                     gatt.discoverServices()
                 }
+
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     bluetoothGatt = null
                     enviarBroadcast(ACTION_DISCONNECTED)
@@ -161,11 +162,22 @@ class KeepAliveService : Service() {
             }
         }
 
+        @Deprecated("Deprecated in API 33")
         override fun onCharacteristicChanged(
             gatt: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic
         ) {
             if (characteristic.getStringValue(0) == "SOS") {
+                handler.post { lanzarEmergencia() }
+            }
+        }
+
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            value: ByteArray
+        ) {
+            if (String(value) == "SOS") {
                 handler.post { lanzarEmergencia() }
             }
         }
