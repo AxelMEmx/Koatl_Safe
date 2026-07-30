@@ -1,7 +1,8 @@
 package com.koatl.safe
 
-import androidx.activity.OnBackPressedCallback
 import android.app.NotificationManager
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.CountDownTimer
@@ -13,6 +14,7 @@ import android.util.Log
 import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import org.json.JSONArray
 import java.text.SimpleDateFormat
@@ -24,26 +26,17 @@ class EmergencyActivity : AppCompatActivity() {
         private const val TAG = "KoatlSafe"
         const val EXTRA_LAT = "lat"
         const val EXTRA_LNG = "lng"
-        const val KEY_EMERGENCY_ACTIVE = "emergencyActive"
-
         const val EXTRA_ES_PRUEBA = "esPrueba"
+        const val KEY_EMERGENCY_ACTIVE = "emergencyActive"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         cancelarNotificacion()
+
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                // No hace nada — bloquea el gesto de regresar
-            }
+            override fun handleOnBackPressed() { }
         })
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                if (android.provider.Settings.canDrawOverlays(this)) {
-                    window.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
-                }
-            }
-        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
@@ -56,6 +49,12 @@ class EmergencyActivity : AppCompatActivity() {
             )
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (android.provider.Settings.canDrawOverlays(this)) {
+                window.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+            }
+        }
 
         setContentView(R.layout.activity_emergency)
 
@@ -106,10 +105,14 @@ class EmergencyActivity : AppCompatActivity() {
         val prefs = getSharedPreferences(ProfileActivity.PREFS_NAME, MODE_PRIVATE)
         prefs.edit().putBoolean(KEY_EMERGENCY_ACTIVE, true).apply()
 
-        val nombre = prefs.getString(ProfileActivity.KEY_NOMBRE, "Usuario") ?: "Usuario"
+        val nombre = prefs.getString(ProfileActivity.KEY_NOMBRE, "Paciente") ?: "Paciente"
         val sangre = prefs.getString(ProfileActivity.KEY_SANGRE, "") ?: ""
-        val domicilio = prefs.getString(ProfileActivity.KEY_DOMICILIO, "") ?: ""
+        val padecimientos = prefs.getString(ProfileActivity.KEY_PADECIMIENTOS, "") ?: ""
+        val medicamentos = prefs.getString(ProfileActivity.KEY_MEDICAMENTOS, "") ?: ""
         val alergias = prefs.getString(ProfileActivity.KEY_ALERGIAS, "") ?: ""
+        val contacto1Telefono = prefs.getString(ProfileActivity.KEY_CONTACTO1_TELEFONO, "") ?: ""
+        val contacto2Telefono = prefs.getString(ProfileActivity.KEY_CONTACTO2_TELEFONO, "") ?: ""
+        val contacto3Telefono = prefs.getString(ProfileActivity.KEY_CONTACTO3_TELEFONO, "") ?: ""
         val fecha = SimpleDateFormat("HH:mm dd/MM/yyyy", Locale.getDefault()).format(Date())
 
         val ubicacionTexto = if (tieneUbicacion) {
@@ -119,27 +122,43 @@ class EmergencyActivity : AppCompatActivity() {
         val esPrueba = intent.getBooleanExtra(EXTRA_ES_PRUEBA, false)
         val prefijo = if (esPrueba) "PRUEBA - " else ""
 
-        val mensaje = "${prefijo}EMERGENCIA - $nombre necesita ayuda. " +
-                "Sangre: $sangre. Alergias: $alergias. " +
-                "Domicilio: $domicilio. " +
-                "Ubicacion: $ubicacionTexto. Hora: $fecha"
+        val mensaje = buildString {
+            append("${prefijo}EMERGENCIA MEDICA - $nombre necesita ayuda urgente. ")
+            append("Sangre: $sangre. ")
+            if (padecimientos.isNotEmpty()) append("Padecimientos: $padecimientos. ")
+            if (medicamentos.isNotEmpty()) append("Medicamentos: $medicamentos. ")
+            if (alergias.isNotEmpty()) append("Alergias: $alergias. ")
+            append("Ubicacion: $ubicacionTexto. Hora: $fecha")
+        }
 
-        val contactosJson = prefs.getString("contactos", "[]") ?: "[]"
-        val array = JSONArray(contactosJson)
-        val smsManager = obtenerSmsManager()
-
-        for (i in 0 until array.length()) {
-            val telefono = array.getJSONObject(i).getString("telefono")
+        // Llamada automatica al contacto 1
+        if (contacto1Telefono.isNotEmpty() && !esPrueba) {
             try {
-                val partes = smsManager.divideMessage(mensaje)
-                if (partes.size == 1) {
-                    smsManager.sendTextMessage(telefono, null, mensaje, null, null)
-                } else {
-                    smsManager.sendMultipartTextMessage(telefono, null, partes, null, null)
+                val callIntent = Intent(Intent.ACTION_CALL).apply {
+                    data = Uri.parse("tel:$contacto1Telefono")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
-                Log.d(TAG, "SMS enviado a $telefono")
+                startActivity(callIntent)
             } catch (e: Exception) {
-                Log.e(TAG, "Error SMS: ${e.message}")
+                Log.e(TAG, "Error al llamar: ${e.message}")
+            }
+        }
+
+        // SMS a contactos 2 y 3
+        val smsManager = obtenerSmsManager()
+        listOf(contacto2Telefono, contacto3Telefono).forEach { telefono ->
+            if (telefono.isNotEmpty()) {
+                try {
+                    val partes = smsManager.divideMessage(mensaje)
+                    if (partes.size == 1) {
+                        smsManager.sendTextMessage(telefono, null, mensaje, null, null)
+                    } else {
+                        smsManager.sendMultipartTextMessage(telefono, null, partes, null, null)
+                    }
+                    Log.d(TAG, "SMS enviado a $telefono")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error SMS: ${e.message}")
+                }
             }
         }
 

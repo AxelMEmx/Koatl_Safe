@@ -1,8 +1,7 @@
 package com.koatl.safe
 
-import android.os.PowerManager
-import androidx.core.content.ContextCompat
 import android.Manifest
+import androidx.cardview.widget.CardView
 import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -13,22 +12,18 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.location.Location
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Looper
-import android.provider.Settings
 import android.telephony.SmsManager
 import android.util.Log
 import android.view.View
 import android.widget.*
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.google.android.gms.location.*
-import org.json.JSONArray
-import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -39,9 +34,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvDispositivo: TextView
     private lateinit var tvPerfilNombre: TextView
     private lateinit var tvPerfilDatos: TextView
-    private lateinit var llContactos: LinearLayout
-    private lateinit var tvSinContactos: TextView
-    private lateinit var layoutEmergenciaActiva: LinearLayout
+    private lateinit var tvContacto1: TextView
+    private lateinit var tvContacto2: TextView
+    private lateinit var tvContacto3: TextView
+    private lateinit var layoutEmergenciaActiva: CardView
     private lateinit var tvUltimaUbicacion: TextView
 
     // GPS
@@ -53,26 +49,21 @@ class MainActivity : AppCompatActivity() {
     private var emergencyTimer: Timer? = null
     private var emergenciaActiva = false
 
-    // Contactos
-    private val contactos = mutableListOf<ContactoEmergencia>()
-
     companion object {
         private const val TAG = "KoatlSafe"
         private const val PERMISSION_REQUEST_CODE = 100
         const val KEY_CONTACTOS = "contactos"
     }
 
-    data class ContactoEmergencia(val nombre: String, val telefono: String)
-
-    // ─── BroadcastReceiver para estado BLE ───────────────────────────────────
+    // ─── BroadcastReceiver ────────────────────────────────────────────────────
 
     private val bleReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
                 KeepAliveService.ACTION_CONNECTED ->
-                    actualizarEstado(true, "PulseraSOS conectada")
+                    actualizarEstado(true, "KoatlSafe conectado")
                 KeepAliveService.ACTION_DISCONNECTED ->
-                    actualizarEstado(false, "Buscando PulseraSOS...")
+                    actualizarEstado(false, "Buscando KoatlSafe...")
             }
         }
     }
@@ -95,21 +86,21 @@ class MainActivity : AppCompatActivity() {
         tvDispositivo = findViewById(R.id.tvDispositivo)
         tvPerfilNombre = findViewById(R.id.tvPerfilNombre)
         tvPerfilDatos = findViewById(R.id.tvPerfilDatos)
-        llContactos = findViewById(R.id.llContactos)
-        tvSinContactos = findViewById(R.id.tvSinContactos)
+        tvContacto1 = findViewById(R.id.tvContacto1)
+        tvContacto2 = findViewById(R.id.tvContacto2)
+        tvContacto3 = findViewById(R.id.tvContacto3)
         layoutEmergenciaActiva = findViewById(R.id.layoutEmergenciaActiva)
         tvUltimaUbicacion = findViewById(R.id.tvUltimaUbicacion)
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
         cargarPerfil()
-        cargarContactos()
 
         findViewById<TextView>(R.id.tvEditarPerfil).setOnClickListener {
             startActivity(Intent(this, ProfileActivity::class.java))
         }
-        findViewById<TextView>(R.id.tvAgregarContacto).setOnClickListener {
-            mostrarDialogoAgregarContacto()
+        findViewById<TextView>(R.id.tvEditarContactos).setOnClickListener {
+            startActivity(Intent(this, ProfileActivity::class.java))
         }
         findViewById<Button>(R.id.btnProbar).setOnClickListener {
             mostrarAlerta(esPrueba = true)
@@ -125,12 +116,20 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         if (!::layoutEmergenciaActiva.isInitialized) return
 
+        cargarPerfil()
+
         val filter = IntentFilter().apply {
             addAction(KeepAliveService.ACTION_CONNECTED)
             addAction(KeepAliveService.ACTION_DISCONNECTED)
         }
         ContextCompat.registerReceiver(
             this, bleReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+
+        actualizarEstado(
+            KeepAliveService.estaConectado,
+            if (KeepAliveService.estaConectado) "KoatlSafe conectado"
+            else "Buscando KoatlSafe..."
         )
 
         val prefs = getSharedPreferences(ProfileActivity.PREFS_NAME, MODE_PRIVATE)
@@ -140,11 +139,6 @@ class MainActivity : AppCompatActivity() {
             layoutEmergenciaActiva.visibility = View.VISIBLE
             iniciarTimerUbicacion()
         }
-        actualizarEstado(
-            KeepAliveService.estaConectado,
-            if (KeepAliveService.estaConectado) "PulseraSOS conectada"
-            else "Buscando PulseraSOS..."
-        )
     }
 
     override fun onPause() {
@@ -167,7 +161,8 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.BLUETOOTH_SCAN,
             Manifest.permission.BLUETOOTH_CONNECT,
             Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.SEND_SMS
+            Manifest.permission.SEND_SMS,
+            Manifest.permission.CALL_PHONE
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permisos.add(Manifest.permission.POST_NOTIFICATIONS)
@@ -184,19 +179,8 @@ class MainActivity : AppCompatActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == PERMISSION_REQUEST_CODE) {
-            if (grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-                iniciarActualizacionUbicacion()
-                iniciarActualizacionUbicacion()
-                startForegroundService(Intent(this, KeepAliveService::class.java))
-                pedirPermisoOverlaySiNecesario()
-                startForegroundService(Intent(this, KeepAliveService::class.java))
-            } else {
-                Toast.makeText(
-                    this,
-                    "Se necesitan todos los permisos para funcionar",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
+            iniciarActualizacionUbicacion()
+            startForegroundService(Intent(this, KeepAliveService::class.java))
         }
     }
 
@@ -205,124 +189,22 @@ class MainActivity : AppCompatActivity() {
     private fun cargarPerfil() {
         val prefs = getSharedPreferences(ProfileActivity.PREFS_NAME, MODE_PRIVATE)
         val nombre = prefs.getString(ProfileActivity.KEY_NOMBRE, "") ?: ""
-        val edad = prefs.getString(ProfileActivity.KEY_EDAD, "") ?: ""
         val sangre = prefs.getString(ProfileActivity.KEY_SANGRE, "") ?: ""
-        val alergias = prefs.getString(ProfileActivity.KEY_ALERGIAS, "") ?: ""
+        val padecimientos = prefs.getString(ProfileActivity.KEY_PADECIMIENTOS, "") ?: ""
 
         tvPerfilNombre.text = nombre
-        val datos = StringBuilder()
-        datos.append("$edad anos  |  Sangre: $sangre")
-        if (alergias.isNotEmpty()) datos.append("\nAlergias: $alergias")
+        val datos = StringBuilder("Sangre: $sangre")
+        if (padecimientos.isNotEmpty()) datos.append("  |  $padecimientos")
         tvPerfilDatos.text = datos.toString()
-    }
 
-    // ─── Contactos ────────────────────────────────────────────────────────────
+        val c1Nombre = prefs.getString(ProfileActivity.KEY_CONTACTO1_NOMBRE, "") ?: ""
+        val c1Tel = prefs.getString(ProfileActivity.KEY_CONTACTO1_TELEFONO, "") ?: ""
+        val c2Nombre = prefs.getString(ProfileActivity.KEY_CONTACTO2_NOMBRE, "") ?: ""
+        val c3Nombre = prefs.getString(ProfileActivity.KEY_CONTACTO3_NOMBRE, "") ?: ""
 
-    private fun cargarContactos() {
-        val prefs = getSharedPreferences(ProfileActivity.PREFS_NAME, MODE_PRIVATE)
-        val json = prefs.getString(KEY_CONTACTOS, "[]") ?: "[]"
-        contactos.clear()
-        val array = JSONArray(json)
-        for (i in 0 until array.length()) {
-            val obj = array.getJSONObject(i)
-            contactos.add(
-                ContactoEmergencia(obj.getString("nombre"), obj.getString("telefono"))
-            )
-        }
-        refrescarListaContactos()
-    }
-
-    private fun guardarContactos() {
-        val array = JSONArray()
-        contactos.forEach {
-            val obj = JSONObject()
-            obj.put("nombre", it.nombre)
-            obj.put("telefono", it.telefono)
-            array.put(obj)
-        }
-        getSharedPreferences(ProfileActivity.PREFS_NAME, MODE_PRIVATE)
-            .edit().putString(KEY_CONTACTOS, array.toString()).apply()
-    }
-
-    private fun mostrarDialogoAgregarContacto() {
-        val dialogView = layoutInflater.inflate(R.layout.dialog_agregar_contacto, null)
-        AlertDialog.Builder(this)
-            .setTitle("Agregar contacto de emergencia")
-            .setView(dialogView)
-            .setPositiveButton("Guardar") { _, _ ->
-                val nombre = dialogView.findViewById<EditText>(R.id.etNombreContacto)
-                    .text.toString().trim()
-                val telefono = dialogView.findViewById<EditText>(R.id.etTelefonoContacto)
-                    .text.toString().trim()
-                if (nombre.isEmpty() || telefono.isEmpty()) {
-                    Toast.makeText(this, "Completa nombre y telefono", Toast.LENGTH_SHORT).show()
-                } else {
-                    contactos.add(ContactoEmergencia(nombre, telefono))
-                    guardarContactos()
-                    refrescarListaContactos()
-                }
-            }
-            .setNegativeButton("Cancelar", null)
-            .show()
-    }
-
-    @SuppressLint("SetTextI18n")
-    private fun refrescarListaContactos() {
-        llContactos.removeAllViews()
-        if (contactos.isEmpty()) {
-            tvSinContactos.visibility = View.VISIBLE
-            return
-        }
-        tvSinContactos.visibility = View.GONE
-        contactos.forEachIndexed { index, contacto ->
-            val fila = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(0, 8, 0, 8)
-            }
-            val textos = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
-                )
-            }
-            val tvNombre = TextView(this).apply {
-                text = contacto.nombre
-                textSize = 15f
-                setTextColor(getColor(android.R.color.black))
-            }
-            val tvTelefono = TextView(this).apply {
-                text = contacto.telefono
-                textSize = 13f
-                setTextColor(0xFF888888.toInt())
-            }
-            textos.addView(tvNombre)
-            textos.addView(tvTelefono)
-
-            val btnEliminar = TextView(this).apply {
-                text = "Eliminar"
-                textSize = 12f
-                setTextColor(0xFFC0392B.toInt())
-                setPadding(16, 0, 0, 0)
-                setOnClickListener {
-                    contactos.removeAt(index)
-                    guardarContactos()
-                    refrescarListaContactos()
-                }
-            }
-            fila.addView(textos)
-            fila.addView(btnEliminar)
-            llContactos.addView(fila)
-
-            if (index < contactos.size - 1) {
-                val divisor = View(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT, 1
-                    ).also { it.setMargins(0, 8, 0, 8) }
-                    setBackgroundColor(0xFFEEEEEE.toInt())
-                }
-                llContactos.addView(divisor)
-            }
-        }
+        tvContacto1.text = if (c1Nombre.isNotEmpty()) "$c1Nombre  $c1Tel" else "Sin configurar"
+        tvContacto2.text = if (c2Nombre.isNotEmpty()) c2Nombre else "Sin configurar"
+        tvContacto3.text = if (c3Nombre.isNotEmpty()) c3Nombre else "Sin configurar"
     }
 
     // ─── GPS ──────────────────────────────────────────────────────────────────
@@ -343,7 +225,7 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    // ─── UI estado ────────────────────────────────────────────────────────────
+    // ─── UI ───────────────────────────────────────────────────────────────────
 
     private fun actualizarEstado(conectado: Boolean, mensaje: String) {
         tvEstado.text = if (conectado) "Conectado" else "Desconectado"
@@ -386,7 +268,7 @@ class MainActivity : AppCompatActivity() {
         val notification = NotificationCompat.Builder(this, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("ALERTA DE EMERGENCIA")
-            .setContentText("Toca para ver la cuenta regresiva")
+            .setContentText("Activando protocolo de emergencia")
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setFullScreenIntent(pendingIntent, true)
@@ -420,18 +302,24 @@ class MainActivity : AppCompatActivity() {
             .apply()
 
         val prefs = getSharedPreferences(ProfileActivity.PREFS_NAME, MODE_PRIVATE)
-        val nombre = prefs.getString(ProfileActivity.KEY_NOMBRE, "Usuario") ?: "Usuario"
+        val nombre = prefs.getString(ProfileActivity.KEY_NOMBRE, "Paciente") ?: "Paciente"
         val fecha = SimpleDateFormat("HH:mm dd/MM/yyyy", Locale.getDefault()).format(Date())
         val mensaje = "ACTUALIZACION: $nombre esta bien. Emergencia cancelada. Hora: $fecha"
-
         val smsManager = obtenerSmsManager()
-        contactos.forEach { contacto ->
-            try {
-                smsManager.sendTextMessage(contacto.telefono, null, mensaje, null, null)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error SMS: ${e.message}")
+
+        listOf(
+            prefs.getString(ProfileActivity.KEY_CONTACTO2_TELEFONO, "") ?: "",
+            prefs.getString(ProfileActivity.KEY_CONTACTO3_TELEFONO, "") ?: ""
+        ).forEach { telefono ->
+            if (telefono.isNotEmpty()) {
+                try {
+                    smsManager.sendTextMessage(telefono, null, mensaje, null, null)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error SMS: ${e.message}")
+                }
             }
         }
+
         Toast.makeText(
             this, "Emergencia detenida. Contactos notificados.", Toast.LENGTH_LONG
         ).show()
@@ -439,7 +327,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun enviarActualizacionUbicacion() {
         val prefs = getSharedPreferences(ProfileActivity.PREFS_NAME, MODE_PRIVATE)
-        val nombre = prefs.getString(ProfileActivity.KEY_NOMBRE, "Usuario") ?: "Usuario"
+        val nombre = prefs.getString(ProfileActivity.KEY_NOMBRE, "Paciente") ?: "Paciente"
         val fecha = SimpleDateFormat("HH:mm dd/MM/yyyy", Locale.getDefault()).format(Date())
 
         val ubicacionTexto = if (ultimaUbicacion != null) {
@@ -451,29 +339,24 @@ class MainActivity : AppCompatActivity() {
         tvUltimaUbicacion.text = "Ultima actualizacion: $fecha"
 
         val smsManager = obtenerSmsManager()
-        contactos.forEach { contacto ->
-            try {
-                val partes = smsManager.divideMessage(mensaje)
-                if (partes.size == 1) {
-                    smsManager.sendTextMessage(contacto.telefono, null, mensaje, null, null)
-                } else {
-                    smsManager.sendMultipartTextMessage(
-                        contacto.telefono, null, partes, null, null
-                    )
+        listOf(
+            prefs.getString(ProfileActivity.KEY_CONTACTO2_TELEFONO, "") ?: "",
+            prefs.getString(ProfileActivity.KEY_CONTACTO3_TELEFONO, "") ?: ""
+        ).forEach { telefono ->
+            if (telefono.isNotEmpty()) {
+                try {
+                    val partes = smsManager.divideMessage(mensaje)
+                    if (partes.size == 1) {
+                        smsManager.sendTextMessage(telefono, null, mensaje, null, null)
+                    } else {
+                        smsManager.sendMultipartTextMessage(
+                            telefono, null, partes, null, null
+                        )
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error SMS: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error SMS: ${e.message}")
             }
-        }
-    }
-
-    private fun pedirExclusionBateria() {
-        val pm = getSystemService(PowerManager::class.java)
-        if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                data = Uri.parse("package:$packageName")
-            }
-            startActivity(intent)
         }
     }
 
@@ -483,26 +366,6 @@ class MainActivity : AppCompatActivity() {
         } else {
             @Suppress("DEPRECATION")
             SmsManager.getDefault()
-        }
-    }
-
-    private fun pedirPermisoOverlaySiNecesario() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (!Settings.canDrawOverlays(this)) {
-                AlertDialog.Builder(this)
-                    .setTitle("Permiso necesario")
-                    .setMessage("Para que la alerta aparezca sobre otras apps, necesitamos un permiso adicional. Toca Aceptar y activa la opcion en la siguiente pantalla.")
-                    .setPositiveButton("Aceptar") { _, _ ->
-                        startActivity(
-                            Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:$packageName")
-                            )
-                        )
-                    }
-                    .setNegativeButton("Ahora no", null)
-                    .show()
-            }
         }
     }
 }

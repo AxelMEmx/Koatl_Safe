@@ -1,8 +1,8 @@
 package com.koatl.safe
 
-
-import android.app.PendingIntent
 import android.annotation.SuppressLint
+import com.google.android.gms.location.*
+import android.app.PendingIntent
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
@@ -25,13 +25,16 @@ class KeepAliveService : Service() {
     private var scanning = false
     private val handler = Handler(Looper.getMainLooper())
 
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private var ultimaUbicacion: android.location.Location? = null
+    private var locationCallback: LocationCallback? = null
     private val SERVICE_UUID = java.util.UUID.fromString("4fafc201-1fb5-459e-8fcc-c5c9c331914b")
     private val CHARACTERISTIC_UUID = java.util.UUID.fromString("beb5483e-36e1-4688-b7f5-ea07361b26a8")
     private val DESCRIPTOR_UUID = java.util.UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
     companion object {
         private const val TAG = "KoatlSafe"
-        private const val DEVICE_NAME = "PulseraSOS"
+        private const val DEVICE_NAME = "KoatlSafe"
         private const val SCAN_PERIOD = 10000L
         const val ACTION_CONNECTED = "com.koatl.safe.CONNECTED"
         const val ACTION_DISCONNECTED = "com.koatl.safe.DISCONNECTED"
@@ -41,6 +44,8 @@ class KeepAliveService : Service() {
     override fun onCreate() {
         super.onCreate()
         iniciarNotificacion()
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        iniciarActualizacionUbicacion()
         val bluetoothManager = getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
         bluetoothAdapter = bluetoothManager.adapter
         iniciarEscaneo()
@@ -56,6 +61,7 @@ class KeepAliveService : Service() {
         super.onDestroy()
         bluetoothGatt?.close()
         bluetoothGatt = null
+        locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
     }
 
     private fun iniciarNotificacion() {
@@ -109,6 +115,23 @@ class KeepAliveService : Service() {
     }
 
     @SuppressLint("MissingPermission")
+    private fun iniciarActualizacionUbicacion() {
+        val request = LocationRequest.Builder(
+            Priority.PRIORITY_HIGH_ACCURACY, 60000L
+        ).setMinUpdateIntervalMillis(30000L).build()
+
+        locationCallback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                ultimaUbicacion = result.lastLocation
+            }
+        }
+
+        fusedLocationClient.requestLocationUpdates(
+            request, locationCallback!!, Looper.getMainLooper()
+        )
+    }
+
+    @SuppressLint("MissingPermission")
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(
             gatt: BluetoothGatt, status: Int, newState: Int
@@ -150,14 +173,10 @@ class KeepAliveService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun lanzarEmergencia() {
-        val fusedLocation = LocationServices.getFusedLocationProviderClient(this)
-        fusedLocation.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
-            .addOnSuccessListener { location ->
-                mostrarEmergencia(location?.latitude ?: 0.0, location?.longitude ?: 0.0)
-            }
-            .addOnFailureListener {
-                mostrarEmergencia(0.0, 0.0)
-            }
+        mostrarEmergencia(
+            ultimaUbicacion?.latitude ?: 0.0,
+            ultimaUbicacion?.longitude ?: 0.0
+        )
     }
 
     private fun mostrarEmergencia(lat: Double, lng: Double) {
