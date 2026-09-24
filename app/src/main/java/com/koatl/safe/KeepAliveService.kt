@@ -17,6 +17,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import android.os.Build
 
 class KeepAliveService : Service() {
 
@@ -59,6 +60,8 @@ class KeepAliveService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        estaConectado = false
+        enviarBroadcast(ACTION_DISCONNECTED)
         bluetoothGatt?.close()
         bluetoothGatt = null
         locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
@@ -156,9 +159,16 @@ class KeepAliveService : Service() {
                 .getService(SERVICE_UUID)
                 ?.getCharacteristic(CHARACTERISTIC_UUID) ?: return
             gatt.setCharacteristicNotification(characteristic, true)
+
             characteristic.getDescriptor(DESCRIPTOR_UUID)?.let {
-                it.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                gatt.writeDescriptor(it)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    gatt.writeDescriptor(it, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    it.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                    @Suppress("DEPRECATION")
+                    gatt.writeDescriptor(it)
+                }
             }
         }
 

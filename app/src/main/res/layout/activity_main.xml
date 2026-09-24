@@ -71,12 +71,17 @@
                 <Button
                     android:id="@+id/btnEstoyBien"
                     android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:text="ESTOY BIEN — Detener emergencia"
+                    android:layout_height="wrap_content"
+                    android:text="Estoy bien — Detener emergencia"
                     android:backgroundTint="#FFFFFF"
                     android:textColor="#DC2626"
                     android:textStyle="bold"
-                    android:textSize="13sp"/>
+                    android:textSize="14sp"
+                    android:paddingTop="14dp"
+                    android:paddingBottom="14dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"/>
+
 
             </LinearLayout>
         </androidx.cardview.widget.CardView>

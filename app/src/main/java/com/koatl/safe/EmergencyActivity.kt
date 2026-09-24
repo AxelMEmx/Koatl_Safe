@@ -16,7 +16,6 @@ import android.view.WindowManager
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
-import org.json.JSONArray
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -91,19 +90,37 @@ class EmergencyActivity : AppCompatActivity() {
             }
         }
 
+        var timerActivo = true
+
         val timer = object : CountDownTimer(10000, 1000) {
             override fun onTick(millisUntilFinished: Long) {
-                tvCuenta.text = (millisUntilFinished / 1000).toString()
+                if (timerActivo) {
+                    tvCuenta.text = (millisUntilFinished / 1000).toString()
+                }
             }
             override fun onFinish() {
-                vibrator.cancel()
-                if (!ubicacionResuelta) {
-                    ubicacionResuelta = true
-                    activarEmergencia(lat, lng, tieneUbicacion)
+                if (timerActivo) {
+                    vibrator.cancel()
+                    if (!ubicacionResuelta) {
+                        ubicacionResuelta = true
+                        activarEmergencia(lat, lng, tieneUbicacion)
+                    }
                 }
             }
         }
         timer.start()
+
+        findViewById<View>(R.id.btnCancelar).setOnClickListener {
+            timerActivo = false
+            timer.cancel()
+            vibrator.cancel()
+            cancelarNotificacion()
+            getSharedPreferences(ProfileActivity.PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_EMERGENCY_ACTIVE, false)
+                .apply()
+            finish()
+        }
     }
 
     private fun obtenerVibrator(): Vibrator {

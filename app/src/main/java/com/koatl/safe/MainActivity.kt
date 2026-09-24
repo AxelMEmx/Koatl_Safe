@@ -285,7 +285,13 @@ class MainActivity : AppCompatActivity() {
         emergencyTimer = Timer()
         emergencyTimer?.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
-                runOnUiThread { enviarActualizacionUbicacion() }
+                runOnUiThread {
+                    if (ultimaUbicacion != null) {
+                        enviarActualizacionUbicacion()
+                    } else {
+                        Log.d(TAG, "Sin ubicacion disponible, omitiendo SMS")
+                    }
+                }
             }
         }, 180000L, 180000L)
     }
